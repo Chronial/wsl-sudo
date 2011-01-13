@@ -18,25 +18,28 @@ How it works
 
 This is in fact a client/server application.
 
-It seems as if the program is running in the current terminal, but in fact, it's invoked by the server, and running remotely (though "remote" is in the same PC).
+It looks as if the child process is running in the current terminal.
+However, in fact, it's invoked by the server, and running remotely
+(though "remote" is in the same PC).
 
-You must at fiest launch a python script named "sudoserver.py",
+You must launch a python script named **sudoserver.py** beforehand,
 in desired privileges. For this purpose, Windows built-in
 Task Scheduler is handy.
 
-"sudoserver.py" opens listening port 127.0.0.1:7070 (by defaults), 
-then sits and wait for connections from "sudo".
+**sudoserver.py** opens a listening port 127.0.0.1:7070 (by defaults), 
+then sits and wait for connections from **sudo**.
 
-"sudo", when invoked, passes it's command line arguments, environment variables,
-current working directory, and terminal window size, to the sudoserver.
+**sudo**, when invoked, connects to the **sudoserver**.
+Then it sends it's command line arguments, environment variables,
+current working directory, and terminal window size, to the **sudoserver**.
 
-When sudoserver accepts connection from sudo, sudoserver forks a child process with pty, set up environments, direcoties, etc passed from the sudo client, then execute the process.
+When **sudoserver** accepts connection from **sudo**, **sudoserver** forks a child process with pty, set up environments, direcoties.. , then execute the process.
 
-The child process is spawned by the server, therefore it runs in the privileges same as the server.
+The child process is spawned by the **sudoserver**, therefore it runs in the privileges same as the server.
 
-And, as the child process runs in a pty, it acts as if running in ordinary terminals. Therefore you can run interactive console-based program like vim or less.
+And, as the child process runs in a pty, it *acts* as if running in ordinary terminals. Therefore you can run cygwin's interactive console-based program like vim or less.
 
-After execution, sudo and sudoserver bridges user's tty and the process I/O.
+After execution, **sudo** and **sudoserver** bridges user's tty and the process I/O.
 
 Requirement
 -----------
