@@ -9,9 +9,12 @@ Emurates Unix sudo in cygwin.
 
 You can use this like::
 
-$ sudo vim /etc/hosts
-$ sudo cp foo.txt /cygdrive/c/Program Files/
-$ sudo # just invoke elevated shell
+    $ sudo vim /etc/hosts
+    $ sudo cp foo.txt /cygdrive/c/Program Files/
+    $ sudo # just invoke elevated shell
+
+This might be handy if you are running cygwin on Vista or Windows 7 with UAC. By this program, you can run processes as an administator, from normal, non-elevated cygwin shell.
+
 
 How it works
 ------------
@@ -23,8 +26,9 @@ However, in fact, it's invoked by the server, and running remotely
 (though "remote" is in the same PC).
 
 You must launch a python script named **sudoserver.py** beforehand,
-in desired privileges. For this purpose, Windows built-in
-Task Scheduler is handy.
+in desired privileges. If you want function like "Run as administrator",
+just run **sudoserver** as administrator.
+For this purpose, Windows built-in Task Scheduler is handy.
 
 **sudoserver.py** opens a listening port 127.0.0.1:7070 (by defaults), 
 then sits and wait for connections from **sudo**.
@@ -51,33 +55,28 @@ Also, you need Python module named greenlet, and eventlet. These are not package
 How to setup
 ------------
 
-1. Install python with cygwin installer.
+#. Install python with cygwin installer.
+#. Download greenlet. It can be downloaded from http://pypi.python.org/pypi/greenlet/
+#. Download eventlet. It can be downloaded from http://pypi.python.org/pypi/eventlet/
+#. Install greenlet package. Extract the archive, and move to the directory. then you type in the cygwin shell::
 
-2. Download greenlet. It can be downloaded from "http://pypi.python.org/pypi/greenlet/"
+    $ python setup.py install
 
-3. Download eventlet. It can be downloaded from "http://pypi.python.org/pypi/eventlet/"
+#. Install eventlet package. Extract the archive, and do the same with the above instruction for greenlet. 
+#. You can place sudo and sudoserver.py where you like. You will want to execute sudo via command line, therefore /usr/local/bin or somewhere in the PATH will be good.
+#. If you want to use the TCP portnumber other than 7070 (default value), you have to edit the both script manually. It is written like::
 
-4. Install greenlet package. Extract the archive, and move to the directory. then you type in the cygwin shell::
+    PORT = 7070
 
-  $ python setup.py install
+#. At first, probably you want to test it. From cygwin shell, invoke sudoserver.py like::
 
-5. Install eventlet package. Extract the archive, and do the same with the above instruction for greenlet. 
+    $ /path/to/sudoserver.py
 
-6. You can place sudo and sudoserver.py where you like. You will want to execute sudo via command line, therefore /usr/local/bin or somewhere in the PATH will be good.
+#. And then, test sudo command like::
 
-7. If you want to use the TCP portnumber other than 7070 (default value), you have to edit the both script manually. It is written like::
+    $ sudo ls -l
 
-  PORT = 7070
-
-8. At first, probably you want to test it. From cygwin shell, invoke sudoserver.py like::
-
-  $ /path/to/sudoserver.py
-
-9. And then, test sudo command like::
-
-  $ sudo ls -l
-
-10. If it seems to work, you can register sudoserver.py to the Windows task scheduler. I recommend you the following setup.
+#. If it seems to work, you can register sudoserver.py to the Windows task scheduler. I recommend you the following setup.
 
    - Action: "Start a program"
    - Triggers: "At log on"
@@ -85,6 +84,15 @@ How to setup
    - "Program/script": C:\\cygwin\\bin\\python.exe
    - "Add arguments(optional)": /path/to/sudoserver.py -nw
 
-With argument "-nw" is specified, sudoserver.py hides it's console window.
+Notes
+-----
 
-11. **sudoserver**, when spawning child, sets an aditional environment variable,  ELEVATED_SHELL=1. You can use this to change your shell prompt (PS1), in order to see which environment you are in.
+With argument "-nw" is specified, **sudoserver** hides it's console window.
+
+**sudoserver** sets an aditional environment variable "ELEVATED_SHELL" when spawing child processes. You can use this variable for changing your elevated shell prompt (PS1), to see which environment you are in. For example, you can put the following in your .bashrc::
+
+    case $ELEVATED_SHELL in
+    1) PS1='\[\033[31m\][\u@\h]#\[\033[0m\] ';;   # elevated
+    *) PS1='\[\033[32m\][\u@\h]$\[\033[0m\] ';;
+    esac
+
