@@ -53,31 +53,31 @@ How to setup
 
 1. Install python with cygwin installer.
 
-2. Download greenlet. It can be downloaded from `here<http://pypi.python.org/pypi/greenlet/>`_. 
+2. Download greenlet. It can be downloaded from <a href="http://pypi.python.org/pypi/greenlet/">http://pypi.python.org/pypi/greenlet</a>
 
-3. Download eventlet. It can be downloaded from `here<http://pypi.python.org/pypi/eventlet/>`
+3. Download eventlet. It can be downloaded from <a href="http://pypi.python.org/pypi/eventlet/">http://pypi.python.org/pypi/greenlet</a>
 
-3. Install greenlet package. Extract the archive, and move to the directory. then you type in the cygwin shell::
+4. Install greenlet package. Extract the archive, and move to the directory. then you type in the cygwin shell::
 
   $ python setup.py install
 
-4. Install eventlet package. Extract the archive, and do the same with the above instruction for greenlet. 
+5. Install eventlet package. Extract the archive, and do the same with the above instruction for greenlet. 
 
-5. You can place sudo and sudoserver.py where you like. You will want to execute sudo via command line, therefore /usr/local/bin or somewhere in the PATH will be good.
+6. You can place sudo and sudoserver.py where you like. You will want to execute sudo via command line, therefore /usr/local/bin or somewhere in the PATH will be good.
 
-6. If you want to use the TCP portnumber other than 7070 (default value), you have to edit the both script directory. It is written like::
+7. If you want to use the TCP portnumber other than 7070 (default value), you have to edit the both script directory. It is written like::
 
   PORT = 7070
 
-7. At first, probably you want to test it. From cygwin shell, invoke sudoserver.py like::
+8. At first, probably you want to test it. From cygwin shell, invoke sudoserver.py like::
 
   $ /path/to/sudoserver.py
 
-8. And then, test sudo command like::
+9. And then, test sudo command like::
 
   $ sudo ls -l
 
-9. If it seems to work, you can register sudoserver.py to the Windows task scheduler. I recommend you the following setup.
+10. If it seems to work, you can register sudoserver.py to the Windows task scheduler. I recommend you the following setup.
 
    - Action: "Start a program"
    - Triggers: "At log on"
@@ -85,4 +85,4 @@ How to setup
    - "Program/script": C:\cygwin\bin\python.exe
    - "Add arguments(optional)": /path/to/sudoserver.py -nw
 
-With argument "-nw" is specified, sudoserver.py hides it's console window.
+  With argument "-nw" is specified, sudoserver.py hides it's console window.
