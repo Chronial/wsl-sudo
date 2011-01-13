@@ -53,9 +53,9 @@ How to setup
 
 1. Install python with cygwin installer.
 
-2. Download greenlet. It can be downloaded from <a href="http://pypi.python.org/pypi/greenlet/">http://pypi.python.org/pypi/greenlet</a>
+2. Download greenlet. It can be downloaded from "http://pypi.python.org/pypi/greenlet/"
 
-3. Download eventlet. It can be downloaded from <a href="http://pypi.python.org/pypi/eventlet/">http://pypi.python.org/pypi/greenlet</a>
+3. Download eventlet. It can be downloaded from "http://pypi.python.org/pypi/eventlet/"
 
 4. Install greenlet package. Extract the archive, and move to the directory. then you type in the cygwin shell::
 
