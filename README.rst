@@ -82,7 +82,9 @@ How to setup
    - Action: "Start a program"
    - Triggers: "At log on"
    - "Run with highest privileges": checked.
-   - "Program/script": C:\cygwin\bin\python.exe
+   - "Program/script": C:\\cygwin\\bin\\python.exe
    - "Add arguments(optional)": /path/to/sudoserver.py -nw
 
-  With argument "-nw" is specified, sudoserver.py hides it's console window.
+With argument "-nw" is specified, sudoserver.py hides it's console window.
+
+11. **sudoserver** sets an aditional environment variables ELEVATED_SHELL=1. You can use this to change your shell prompt (PS1), in order to see which environment you are in.
