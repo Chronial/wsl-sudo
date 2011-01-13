@@ -33,7 +33,7 @@ then sits and wait for connections from **sudo**.
 Then it sends it's command line arguments, environment variables,
 current working directory, and terminal window size, to the **sudoserver**.
 
-When **sudoserver** accepts connection from **sudo**, **sudoserver** forks a child process with pty, set up environments, direcoties.. , then execute the process.
+When **sudoserver** accepts connection from **sudo**, **sudoserver** forks a child process with pty, set up environments, current working directory or something, then execute the process.
 
 The child process is spawned by the **sudoserver**, therefore it runs in the privileges same as the server.
 
@@ -65,7 +65,7 @@ How to setup
 
 6. You can place sudo and sudoserver.py where you like. You will want to execute sudo via command line, therefore /usr/local/bin or somewhere in the PATH will be good.
 
-7. If you want to use the TCP portnumber other than 7070 (default value), you have to edit the both script directory. It is written like::
+7. If you want to use the TCP portnumber other than 7070 (default value), you have to edit the both script manually. It is written like::
 
   PORT = 7070
 
