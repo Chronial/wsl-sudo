@@ -87,4 +87,4 @@ How to setup
 
 With argument "-nw" is specified, sudoserver.py hides it's console window.
 
-11. **sudoserver** sets an aditional environment variables ELEVATED_SHELL=1. You can use this to change your shell prompt (PS1), in order to see which environment you are in.
+11. **sudoserver**, when spawning child, sets an aditional environment variable,  ELEVATED_SHELL=1. You can use this to change your shell prompt (PS1), in order to see which environment you are in.
