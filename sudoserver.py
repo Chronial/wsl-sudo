@@ -40,8 +40,8 @@ def child(cmdline, cwd, winsize, env):
         os.chdir(cwd)
         fcntl.ioctl(0, termios.TIOCSWINSZ, winsize)
         envdict = dict(line.split('=', 1) for line in env.split('\0'))
+        envdict['ELEVATED_SHELL'] = '1'
         if not cmdline:
-            envdict['ELEVATED_SHELL'] = '1'
             shell = envdict.get('SHELL', '/bin/bash')
             os.execvpe(shell, (shell, '-i'), envdict)
         else:
@@ -100,14 +100,15 @@ def request_handler(conn, server):
 def handle_sigchild(n, f):
     while True:
         try:
-            os.waitpid(-1, os.WNOHANG)
+            if os.waitpid(-1, os.WNOHANG) == (0, 0):
+                break
         except OSError as e:
             if e.errno != errno.ECHILD:
                 traceback.print_exc()
             break
 
 def main():
-    eventlet.patcher.monkey_patch(all=False, os=True)
+    eventlet.patcher.monkey_patch(all=True)
     server = eventlet.listen(('127.0.0.1', PORT))
     signal.signal(signal.SIGCHLD, handle_sigchild)
     while True:
