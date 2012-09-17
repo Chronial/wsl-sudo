@@ -82,7 +82,7 @@ How to setup
    - Triggers: "At log on"
    - "Run with highest privileges": checked.
    - "Program/script": C:\\cygwin\\bin\\python.exe
-   - "Add arguments(optional)": /path/to/sudoserver.py -nw
+   - "Add arguments(optional)": /path/to/sudoserver.py
 
 Notes
 -----
