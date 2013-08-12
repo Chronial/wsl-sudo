@@ -81,8 +81,9 @@ How to setup
    - Action: "Start a program"
    - Triggers: "At log on"
    - "Run with highest privileges": checked.
+   - "Run only when user is logged on": checked.
    - "Program/script": C:\\cygwin\\bin\\python.exe
-   - "Add arguments(optional)": /path/to/sudoserver.py
+   - "Add arguments(optional)": /path/to/sudoserver.py -nw
 
 Notes
 -----

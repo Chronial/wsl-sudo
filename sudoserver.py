@@ -116,27 +116,12 @@ def main():
         print 'Accepted connection from %r' % (acc,)
         eventlet.spawn_n(request_handler, conn, server)
 
-def fork_and_die():
-    pid = os.fork()
-    if (pid > 0):
-        sys.exit(0)
-
 def cygwin_hide_console_window():
     import ctypes
     hwnd = ctypes.cdll.kernel32.GetConsoleWindow()
     ctypes.cdll.user32.ShowWindow(hwnd, 0)
 
-def cygwin_main_nowindow():
-    fork_and_die()
-    os.setsid()
-    fork_and_die()
-    os.chdir('/')
-
-    cygwin_hide_console_window()
-    main()
-
 if __name__ == '__main__':
-    if len(sys.argv) > 1 and sys.argv[1] == '-nw':
-        cygwin_main_nowindow()
-    else:
-        main()
+    if sys.platform == 'cygwin' and len(sys.argv) > 1 and sys.argv[1] == '-nw':
+        cygwin_hide_console_window()
+    main()
