@@ -58,11 +58,13 @@ How to setup
 #. Install python with cygwin installer.
 #. Download greenlet. It can be downloaded from http://pypi.python.org/pypi/greenlet/
 #. Download eventlet. It can be downloaded from http://pypi.python.org/pypi/eventlet/
-#. Install greenlet package. Extract the archive, and move to the directory. then you type in the cygwin shell::
+#. If you don't have setuptools installed, you also need it. https://pypi.python.org/pypi/setuptools 
+#. Install greenlet package. Extract the archive, and cd to the directory. then you type in the cygwin shell::
 
     $ python setup.py install
 
-#. Install eventlet package. Extract the archive, and do the same with the above instruction for greenlet. 
+#. Install eventlet package. Extract the archive, and do the same with the above instruction for greenlet. If this doesn't work, probably you need setuptools. Download setuptools and install it. setuptools can be installed in same way as greenlet.
+
 #. You can place sudo and sudoserver.py where you like. You will want to execute sudo via command line, therefore /usr/local/bin or somewhere in the PATH will be good.
 #. If you want to use the TCP portnumber other than 7070 (default value), you have to edit the both script manually. It is written like::
 
