@@ -11,10 +11,20 @@ You can use this like::
 
     $ sudo vim /etc/hosts
     $ sudo cp foo.txt /cygdrive/c/Program Files/
+    $ suco cygstart cmd # open elevated standard command prompt
+    $ sudo cygstart regedit
     $ sudo # just invoke elevated shell
 
 This might be handy if you are running cygwin on Vista or Windows 7 with UAC. By this program, you can run processes as an administator, from normal, non-elevated cygwin shell.
 
+
+Caution
+-------
+
+UAC Elevation is usually done through UI prompt for good reasons.
+By this program, you can run elevated process without UI prompt that does not
+go along well with Cygwin shell environment.
+However, it also means that you are weakening the system in terms of security.
 
 How it works
 ------------
