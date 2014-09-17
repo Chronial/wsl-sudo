@@ -27,20 +27,27 @@ def xselect(*args):
                 raise
 
 def get_winsize():
+    if not os.isatty(0):
+        return struct.pack('HHHH', 24, 80, 640, 480)
+
     winsz = struct.pack('HHHH', 0, 0, 0, 0)
     return fcntl.ioctl(0, termios.TIOCGWINSZ, winsz)
 
 @contextmanager
 def raw_term_mode():
-    attr = termios.tcgetattr(0)
-    restore = lambda: termios.tcsetattr(0, termios.TCSAFLUSH, attr)
-    def sighandler(n, f):
-        restore()
-        sys.exit(2)
+    if os.isatty(0):
+        attr = termios.tcgetattr(0)
+        restore = lambda: termios.tcsetattr(0, termios.TCSAFLUSH, attr)
+        def sighandler(n, f):
+            restore()
+            sys.exit(2)
 
-    tty.setraw(0)
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        signal.signal(sig, sighandler)
+        tty.setraw(0)
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            signal.signal(sig, sighandler)
+    else:
+        restore = lambda: None
+
     try:
         yield
     finally:
