@@ -52,9 +52,15 @@ def child(cmdline, cwd, winsize, env):
     finally:
         sys.exit(0)
 
+def try_read(fd, size):
+    try:
+        return os.read(fd, size)
+    except:
+        return ''
+
 def pty_read_loop(master, sock):
     try:
-        for chunk in iter(lambda: os.read(master, 8192), ''):
+        for chunk in iter(lambda: try_read(master, 8192), ''):
             sock.sendall(chunk)
         sock.shutdown(socket.SHUT_WR)
     except Exception as e:
