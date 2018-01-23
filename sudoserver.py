@@ -85,6 +85,8 @@ def sock_read_loop(sock, master, pid):
 def request_handler(conn, server):
     try:
         child_args = [ read_command(conn) for _ in range(4) ]
+        if child_args[0] == "su_exit":
+            sys.exit()
 
         pid, master = pty.fork()
         if pid == 0:
