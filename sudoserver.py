@@ -16,8 +16,10 @@ PORT = 7070
 CMD_DATA = 1
 CMD_WINSZ = 2
 
+
 class PartialRead(Exception):
     pass
+
 
 def readn(sock, n):
     d = []
@@ -31,9 +33,11 @@ def readn(sock, n):
         raise PartialRead('EOF while reading')
     return ''.join(d)
 
+
 def read_command(sock):
     length = struct.unpack('I', readn(sock, 4))[0]
     return readn(sock, length)
+
 
 def child(cmdline, cwd, winsize, env):
     try:
@@ -52,11 +56,13 @@ def child(cmdline, cwd, winsize, env):
     finally:
         sys.exit(0)
 
+
 def try_read(fd, size):
     try:
         return os.read(fd, size)
     except:
         return ''
+
 
 def pty_read_loop(master, sock):
     try:
@@ -65,6 +71,7 @@ def pty_read_loop(master, sock):
         sock.shutdown(socket.SHUT_WR)
     except Exception as e:
         traceback.print_exc()
+
 
 def sock_read_loop(sock, master, pid):
     try:
@@ -82,9 +89,10 @@ def sock_read_loop(sock, master, pid):
         else:
             traceback.print_exc()
 
+
 def request_handler(conn, server):
     try:
-        child_args = [ read_command(conn) for _ in range(4) ]
+        child_args = [read_command(conn) for _ in range(4)]
         print("Running command: " + child_args[0])
         if child_args[0] == "su_exit":
             sys.exit()
@@ -106,6 +114,7 @@ def request_handler(conn, server):
         print 'Closing connection'
         conn.close()
 
+
 def handle_sigchild(n, f):
     while True:
         try:
@@ -116,6 +125,7 @@ def handle_sigchild(n, f):
                 traceback.print_exc()
             break
 
+
 def main():
     eventlet.patcher.monkey_patch(all=True)
     server = eventlet.listen(('127.0.0.1', PORT))
@@ -124,10 +134,12 @@ def main():
     print 'Accepted connection from %r' % (acc,)
     request_handler(conn, server)
 
+
 def cygwin_hide_console_window():
     import ctypes
     hwnd = ctypes.cdll.LoadLibrary('kernel32.dll').GetConsoleWindow()
     ctypes.cdll.LoadLibrary('user32.dll').ShowWindow(hwnd, 0)
+
 
 if __name__ == '__main__':
     if sys.platform == 'cygwin' and len(sys.argv) > 1 and sys.argv[1] == '-nw':
