@@ -124,8 +124,8 @@ def main():
 
 def cygwin_hide_console_window():
     import ctypes
-    hwnd = ctypes.cdll.kernel32.GetConsoleWindow()
-    ctypes.cdll.user32.ShowWindow(hwnd, 0)
+    hwnd = ctypes.cdll.LoadLibrary('kernel32.dll').GetConsoleWindow()
+    ctypes.cdll.LoadLibrary('user32.dll').ShowWindow(hwnd, 0)
 
 if __name__ == '__main__':
     if sys.platform == 'cygwin' and len(sys.argv) > 1 and sys.argv[1] == '-nw':
