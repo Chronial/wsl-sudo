@@ -15,7 +15,7 @@ shell through it.
 Requirements
 ------------
 
-`cygwin-sudo` requires Python > 3.4. You can get it by installing `python3`
+`cygwin-sudo` requires Python >= 3.5. You can get it by installing `python3`
 with the cygwin installer.
 
 

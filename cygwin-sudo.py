@@ -167,7 +167,7 @@ class UnprivilegedClient:
                         sys.executable, __file__,
                         '--elevated', 'server', str(port), pwf.name])
                 except subprocess.CalledProcessError as e:
-                    print("Failed to start elevated process")
+                    print("sudo: failed to start elevated process")
                     return
 
                 listen_socket.settimeout(5)
@@ -193,31 +193,27 @@ class UnprivilegedClient:
             with self.raw_term_mode():
                 fdset = [0, self.sock.fileno()]
                 while True:
-                    for fd in self.xselect(fdset, (), ())[0]:
+                    for fd in select.select(fdset, (), ())[0]:
                         if fd == 0:
                             self.channel.send_command(CMD_DATA, os.read(0, 8192))
                         else:
-                            try:
-                                cmd, data = self.channel.recv_command()
-                            except PartialRead:
-                                print("sudo: Lost connection to elevated process")
-                                sys.exit(1)
-                            if cmd == CMD_DATA:
-                                os.write(1, data)
-                            elif cmd == CMD_RETURN:
-                                sys.exit(struct.unpack('i', data)[0])
-                            else:
-                                raise ValueError("Unexpected message")
+                            self.recv_command()
 
             self.sock.shutdown(socket.SHUT_WR)
 
-    def xselect(self, *args):
-        while True:
-            try:
-                return select.select(*args)
-            except select.error as e:
-                if e.args[0] != errno.EINTR:
-                    raise
+    def recv_command(self):
+        try:
+            cmd, data = self.channel.recv_command()
+        except PartialRead:
+            print("sudo: Lost connection to elevated process")
+            sys.exit(1)
+
+        if cmd == CMD_DATA:
+            os.write(1, data)
+        elif cmd == CMD_RETURN:
+            sys.exit(struct.unpack('i', data)[0])
+        else:
+            raise ValueError("Unexpected message")
 
     @contextmanager
     def raw_term_mode(self):
