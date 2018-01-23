@@ -46,8 +46,7 @@ def child(cmdline, cwd, winsize, env):
     envdict = dict(line.split(b'=', 1) for line in env.split(b'\0'))
     envdict[b'ELEVATED_SHELL'] = b'1'
     if not cmdline:
-        shell = envdict.get(b'SHELL', b'/bin/bash')
-        os.execvpe(shell, (shell, '-i'), envdict)
+        print("No command given")
     else:
         argv = cmdline.split(b'\0')
         os.execvpe(argv[0], argv, envdict)
