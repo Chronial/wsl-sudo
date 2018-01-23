@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-import errno
 import fcntl
 import os
 import pty
@@ -107,21 +106,9 @@ def request_handler(conn):
                 executor.submit(sock_read_loop, conn, child_pty, child_pid)
 
 
-def handle_sigchild(n, f):
-    while True:
-        try:
-            if os.waitpid(-1, os.WNOHANG) == (0, 0):
-                break
-        except OSError as e:
-            if e.errno != errno.ECHILD:
-                traceback.print_exc()
-            break
-
-
 def main():
     serversocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     serversocket.bind(('127.0.0.1', PORT))
-    signal.signal(signal.SIGCHLD, handle_sigchild)
     with closing(serversocket):
         serversocket.listen()
         conn, acc = serversocket.accept()
