@@ -66,11 +66,14 @@ class ElevatedServer:
             envdict = dict(line.split(b'=', 1) for line in env.split(b'\0'))
             envdict[b'ELEVATED_SHELL'] = b'1'
             argv = cmdline.split(b'\0')
-            os.execvpe(argv[0], argv, envdict)
+            try:
+                os.execvpe(argv[0], argv, envdict)
+            except FileNotFoundError:
+                print("sudo: Unknown command '{}'".format(os.fsdecode(argv[0])))
         except BaseException:
             traceback.print_exc()
         finally:
-            sys._exit(1)
+            os._exit(1)
 
     def recv_n(self, n):
         d = []
@@ -130,10 +133,16 @@ class UnprivilegedClient:
                 port = listen_socket.getsockname()[1]
                 listen_socket.listen(1)
 
-                subprocess.run(["cygstart", "--action=runas", window,
-                                sys.executable, __file__,
-                                '--elevated', 'server', str(port), pwf.name])
+                try:
+                    subprocess.check_call([
+                        "cygstart", "--action=runas", window,
+                        sys.executable, __file__,
+                        '--elevated', 'server', str(port), pwf.name])
+                except subprocess.CalledProcessError as e:
+                    print("Failed to start elevated process")
+                    return
 
+                listen_socket.settimeout(5)
                 self.sock, acc = listen_socket.accept()
 
             command_bytes = list(map(os.fsencode, command))
