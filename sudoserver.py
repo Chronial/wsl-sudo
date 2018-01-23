@@ -84,6 +84,8 @@ def sock_read_loop(sock, child_pty, pid):
 
 
 def main():
+    with open(sys.argv[1], 'rb') as f:
+        password = f.read()
     serversocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     serversocket.bind(('127.0.0.1', PORT))
     with closing(serversocket):
@@ -91,6 +93,11 @@ def main():
         conn, acc = serversocket.accept()
         serversocket.shutdown(socket.SHUT_WR)
     with closing(conn):
+        received_password = read_message(conn)
+        if received_password != password:
+            print("error: invalid password")
+            sys.exit(1)
+
         child_args = [read_message(conn) for _ in range(4)]
         print("> " + child_args[0].decode())
 
@@ -102,20 +109,12 @@ def main():
             except BaseException:
                 traceback.print_exc()
             finally:
-                sys.exit(0)
+                sys._exit(1)
         else:
             with ThreadPoolExecutor(max_workers=2) as executor:
                 executor.submit(pty_read_loop, child_pty, conn)
                 executor.submit(sock_read_loop, conn, child_pty, child_pid)
 
 
-def cygwin_hide_console_window():
-    import ctypes
-    hwnd = ctypes.cdll.LoadLibrary('kernel32.dll').GetConsoleWindow()
-    ctypes.cdll.LoadLibrary('user32.dll').ShowWindow(hwnd, 0)
-
-
 if __name__ == '__main__':
-    if sys.platform == 'cygwin' and len(sys.argv) > 1 and sys.argv[1] == '-nw':
-        cygwin_hide_console_window()
     main()

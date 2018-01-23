@@ -6,6 +6,8 @@ import select
 import signal
 import socket
 import struct
+import subprocess
+import tempfile
 import sys
 import tty
 from contextlib import ExitStack, closing, contextmanager
@@ -65,9 +67,10 @@ def send_command(fd, cmd, data):
     send_message(fd, struct.pack('I', cmd) + data)
 
 
-def main(args):
+def client_main(password, args):
     with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as sock:
         sock.connect(('127.0.0.1', PORT))
+        send_message(sock, password)
         send_message(sock, b'\0'.join(args))
         send_message(sock, os.fsencode(os.getcwd()))
         send_message(sock, get_winsize())
@@ -93,6 +96,18 @@ def main(args):
                             done = True
 
 
+def main():
+    password = os.urandom(32)
+    sudoserver = os.path.dirname(os.path.abspath(__file__)) + '/sudoserver.py'
+    with tempfile.NamedTemporaryFile("wb") as tf:
+        tf.write(password)
+        tf.flush()
+        subprocess.run(["cygstart", "--action=runas", "--minimize",
+                        sys.executable, sudoserver, tf.name])
+
+        argvb = list(map(os.fsencode, sys.argv))
+        client_main(password, argvb[1:])
+
+
 if __name__ == '__main__':
-    argvb = list(map(os.fsencode, sys.argv))
-    main(argvb[1:])
+    main()
