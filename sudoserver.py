@@ -70,8 +70,8 @@ def pty_read_loop(child_pty, sock):
 def sock_read_loop(sock, child_pty, pid):
     try:
         while True:
-            command = read_message(sock)
-            id, data = struct.unpack('I', command[:4])[0], command[4:]
+            message = read_message(sock)
+            id, data = struct.unpack('I', message[:4])[0], message[4:]
             if id == CMD_DATA:
                 os.write(child_pty, data)
             elif id == CMD_WINSZ:
@@ -89,12 +89,9 @@ def main():
     with closing(serversocket):
         serversocket.listen()
         conn, acc = serversocket.accept()
-        print('Accepted connection from %r' % (acc,))
     with closing(conn):
         child_args = [read_message(conn) for _ in range(4)]
-        print("Running command: " + child_args[0].decode())
-        if child_args[0] == "su_exit":
-            sys.exit()
+        print("> " + child_args[0].decode())
 
         child_pid, child_pty = pty.fork()
         if child_pid == 0:
