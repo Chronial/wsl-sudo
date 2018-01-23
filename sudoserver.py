@@ -120,10 +120,9 @@ def main():
     eventlet.patcher.monkey_patch(all=True)
     server = eventlet.listen(('127.0.0.1', PORT))
     signal.signal(signal.SIGCHLD, handle_sigchild)
-    while True:
-        conn, acc = server.accept()
-        print 'Accepted connection from %r' % (acc,)
-        eventlet.spawn_n(request_handler, conn, server)
+    conn, acc = server.accept()
+    print 'Accepted connection from %r' % (acc,)
+    request_handler(conn, server)
 
 def cygwin_hide_console_window():
     import ctypes
