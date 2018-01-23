@@ -12,7 +12,6 @@ from contextlib import closing
 
 import termios
 
-PORT = 7070
 CMD_DATA = 1
 CMD_WINSZ = 2
 
@@ -84,26 +83,22 @@ def sock_read_loop(sock, child_pty, pid):
 
 
 def main():
-    with open(sys.argv[1], 'rb') as f:
+    port = int(sys.argv[1])
+    with open(sys.argv[2], 'rb') as f:
         password = f.read()
-    serversocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    serversocket.bind(('127.0.0.1', PORT))
-    with closing(serversocket):
-        serversocket.listen()
-        conn, acc = serversocket.accept()
-        serversocket.shutdown(socket.SHUT_WR)
-    with closing(conn):
-        received_password = read_message(conn)
+    with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as sock:
+        sock.connect(('127.0.0.1', port))
+        received_password = read_message(sock)
         if received_password != password:
             print("error: invalid password")
             sys.exit(1)
 
-        child_args = [read_message(conn) for _ in range(4)]
+        child_args = [read_message(sock) for _ in range(4)]
         print("> " + child_args[0].decode())
 
         child_pid, child_pty = pty.fork()
         if child_pid == 0:
-            conn.close()
+            sock.close()
             try:
                 child(*child_args)
             except BaseException:
@@ -112,8 +107,8 @@ def main():
                 sys._exit(1)
         else:
             with ThreadPoolExecutor(max_workers=2) as executor:
-                executor.submit(pty_read_loop, child_pty, conn)
-                executor.submit(sock_read_loop, conn, child_pty, child_pid)
+                executor.submit(pty_read_loop, child_pty, sock)
+                executor.submit(sock_read_loop, sock, child_pty, child_pid)
 
 
 if __name__ == '__main__':
