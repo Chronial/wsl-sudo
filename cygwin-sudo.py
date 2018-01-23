@@ -13,14 +13,16 @@ import sys
 import tempfile
 import traceback
 import tty
-from concurrent.futures import ThreadPoolExecutor
+import concurrent.futures
 from contextlib import ExitStack, closing, contextmanager
 
 import termios
 
-CMD_DATA = 1
-CMD_WINSZ = 2
-CMD_RETURN = 3
+CMD_STDIN = 1
+CMD_STDOUT = 2
+CMD_STDERR = 3
+CMD_WINSZ = 4
+CMD_RETURN = 5
 
 
 class PartialRead(Exception):
@@ -77,31 +79,51 @@ class ElevatedServer:
                 print("ERROR: invalid password")
                 sys.exit(1)
 
-            child_args = [self.channel.recv_message() for _ in range(4)]
-            print("Elevated sudo server running:")
-            print("> " + child_args[0].decode())
+            child_argv = self.channel.recv_message().split(b'\0')
+            child_cwd = self.channel.recv_message()
+            child_winsize = self.channel.recv_message()
+            child_pty_flags = struct.unpack('bbb', self.channel.recv_message())
+            env_packed = self.channel.recv_message()
+            child_envdict = dict(x.split(b'=', 1) for x in env_packed.split(b'\0'))
 
-            child_pid, child_pty = pty.fork()
+            print("Elevated sudo server running:")
+            print("> " + b" ".join(child_argv).decode())
+
+            child_pid, child_fds = self.pty_fork(child_pty_flags)
             if child_pid == 0:
-                self.child_process(*child_args)
+                self.child_fds = child_fds
+                self.child_process(child_argv, child_cwd, child_winsize, child_envdict)
             else:
                 self.child_pid = child_pid
-                self.child_pty = child_pty
+                self.child_fds = child_fds
                 self.main_process()
 
     def main_process(self):
-        with ThreadPoolExecutor(max_workers=2) as executor:
-            executor.submit(self.pty_read_loop)
-            executor.submit(self.sock_read_loop)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+            sf = executor.submit(self.sock_read_loop)
+            cf = executor.submit(self.child_read_loop)
 
-    def child_process(self, cmdline, cwd, winsize, env):
+            concurrent.futures.wait([sf, cf], return_when=concurrent.futures.FIRST_COMPLETED)
+            for fd in set(self.child_fds):
+                os.close(fd)
+
+            print('pty closed, getting return value')
+            (success, exit_status) = os.waitpid(self.child_pid, 0)
+            if not success or not os.WIFEXITED(exit_status):
+                return_code = 1
+                print('process did not shut down normally, no return value')
+            else:
+                return_code = os.WEXITSTATUS(exit_status)
+                print('process finished with return value ', return_code)
+            self.channel.send_command(CMD_RETURN, struct.pack('i', return_code))
+            self.sock.shutdown(socket.SHUT_WR)
+
+    def child_process(self, argv, cwd, winsize, envdict):
         try:
-            self.sock.close()
             os.chdir(cwd)
-            fcntl.ioctl(0, termios.TIOCSWINSZ, winsize)
-            envdict = dict(line.split(b'=', 1) for line in env.split(b'\0'))
+            if os.isatty(0):
+                fcntl.ioctl(0, termios.TIOCSWINSZ, winsize)
             envdict[b'ELEVATED_SHELL'] = b'1'
-            argv = cmdline.split(b'\0')
             try:
                 os.execvpe(argv[0], argv, envdict)
             except FileNotFoundError:
@@ -111,42 +133,89 @@ class ElevatedServer:
         finally:
             os._exit(1)
 
-    def try_read(self, fd, size):
+    def child_read_loop(self):
         try:
-            return os.read(fd, size)
+            while True:
+                for fd in select.select(self.child_fds[1:3], (), ())[0]:
+                    chunk = os.read(fd, 8192)
+                    if not chunk:
+                        return
+                    command = CMD_STDOUT if fd == self.child_fds[1] else CMD_STDERR
+                    self.channel.send_command(command, chunk)
         except OSError:
-            return b''
-
-    def pty_read_loop(self):
-        try:
-            for chunk in iter(lambda: self.try_read(self.child_pty, 8192), b''):
-                self.channel.send_command(CMD_DATA, chunk)
-            print('pty closed, getting return value')
-            (success, exit_status) = os.waitpid(self.child_pid, os.WNOHANG)
-            if not success or not os.WIFEXITED(exit_status):
-                return_code = 1
-                print('process did not shut down normally, no return value')
-            else:
-                return_code = os.WEXITSTATUS(exit_status)
-                print('process finished with return value ', return_code)
-            self.channel.send_command(CMD_RETURN, struct.pack('i', return_code))
-            self.sock.shutdown(socket.SHUT_WR)
+            return
         except Exception as e:
             traceback.print_exc()
+        finally:
+            print('Child read loop terminated')
 
     def sock_read_loop(self):
         try:
             while True:
-                id, data = self.channel.recv_command()
-                if id == CMD_DATA:
-                    os.write(self.child_pty, data)
-                elif id == CMD_WINSZ:
-                    fcntl.ioctl(self.child_pty, termios.TIOCSWINSZ, data)
+                cmd, data = self.channel.recv_command()
+                if cmd == CMD_STDIN:
+                    os.write(self.child_fds[0], data)
+                elif cmd == CMD_WINSZ:
+                    fcntl.ioctl(self.child_fds[1], termios.TIOCSWINSZ, data)
                     os.kill(self.child_pid, signal.SIGWINCH)
+                else:
+                    raise ValueError("Unexpected command:", cmd)
         except PartialRead:
-            print('FIN received')
+            pass
         except Exception:
             traceback.print_exc()
+        finally:
+            print('Socket read loop terminated')
+
+    def pty_fork(self, pty_flags):
+        """Fork a child process, connecting to a new pty
+
+        Args: tty_flags is a list of 3 booleans, specifying if the corresponding
+              fd of the child should be connected to the pty
+        Returns: a tuple (pid, fds): the fork-result pid and a list of our end
+                 of the 3 standard streams"""
+        has_pty = any(pty_flags)
+        if has_pty:
+            master_pty, slave_pty = pty.openpty()
+
+        fds = []
+        for i, is_pty in enumerate(pty_flags):
+            if is_pty:
+                fds.append((master_pty, slave_pty))
+            else:
+                master_pipe, slave_pipe = os.pipe()
+                if i == 0:  # STDIN
+                    master_pipe, slave_pipe = slave_pipe, master_pipe
+                os.set_inheritable(slave_pipe, True)
+                fds.append((master_pipe, slave_pipe))
+
+        pid = os.fork()
+        if pid == 0:
+            if has_pty:
+                # Establish a new session.
+                os.setsid()
+                os.close(master_pty)
+
+            for i, (master, slave) in enumerate(fds):
+                os.dup2(slave, i)
+
+            for fd in {s for m, s in fds}:
+                if fd > 3:
+                    os.close(fd)
+
+            if has_pty:
+                for i, ((master, slave), is_pty) in enumerate(zip(fds, pty_flags)):
+                    if is_pty:
+                        # Explicitly open the tty to make it become a controlling tty.
+                        tmp_fd = os.open(os.ttyname(i), os.O_RDWR)
+                        os.close(tmp_fd)
+                        break
+
+            return pid, [s for m, s in fds]
+        else:
+            for fd in {s for m, s in fds}:
+                os.close(fd)
+            return pid, [m for m, s in fds]
 
 
 class UnprivilegedClient:
@@ -183,9 +252,11 @@ class UnprivilegedClient:
             self.channel.send_message(b'\0'.join(command))
             self.channel.send_message(os.fsencode(os.getcwd()))
             self.channel.send_message(self.get_winsize())
+            self.channel.send_message(struct.pack('bbb', os.isatty(0), os.isatty(1), os.isatty(2)))
             self.channel.send_message(b'\0'.join(b'%s=%s' % t for t in os.environb.items()))
 
             def handle_sigwinch(n, f):
+                # TODO: fix race condition with normal send
                 self.channel.send_command(CMD_WINSZ, self.get_winsize())
 
             signal.signal(signal.SIGWINCH, handle_sigwinch)
@@ -195,7 +266,12 @@ class UnprivilegedClient:
                 while True:
                     for fd in select.select(fdset, (), ())[0]:
                         if fd == 0:
-                            self.channel.send_command(CMD_DATA, os.read(0, 8192))
+                            chunk = os.read(0, 8192)
+                            if chunk:
+                                self.channel.send_command(CMD_STDIN, chunk)
+                            else:
+                                # stdin is a pipe and is closed
+                                fdset.remove(0)
                         else:
                             self.recv_command()
 
@@ -208,12 +284,14 @@ class UnprivilegedClient:
             print("sudo: Lost connection to elevated process")
             sys.exit(1)
 
-        if cmd == CMD_DATA:
+        if cmd == CMD_STDOUT:
             os.write(1, data)
+        elif cmd == CMD_STDERR:
+            os.write(2, data)
         elif cmd == CMD_RETURN:
             sys.exit(struct.unpack('i', data)[0])
         else:
-            raise ValueError("Unexpected message")
+            raise ValueError("Unexpected message", cmd)
 
     @contextmanager
     def raw_term_mode(self):
