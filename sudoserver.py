@@ -89,6 +89,7 @@ def main():
     with closing(serversocket):
         serversocket.listen()
         conn, acc = serversocket.accept()
+        serversocket.shutdown(socket.SHUT_WR)
     with closing(conn):
         child_args = [read_message(conn) for _ in range(4)]
         print("> " + child_args[0].decode())
