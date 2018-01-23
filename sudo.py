@@ -8,9 +8,7 @@ import signal
 import select
 import struct
 import socket
-import getopt
 import errno
-import traceback
 from contextlib import closing, contextmanager
 
 PORT = 7070
@@ -41,7 +39,8 @@ def raw_term_mode():
     if os.isatty(0):
         attr = termios.tcgetattr(0)
 
-        def restore(): return termios.tcsetattr(0, termios.TCSAFLUSH, attr)
+        def restore():
+            termios.tcsetattr(0, termios.TCSAFLUSH, attr)
 
         def sighandler(n, f):
             restore()
@@ -51,7 +50,8 @@ def raw_term_mode():
         for sig in (signal.SIGINT, signal.SIGTERM):
             signal.signal(sig, sighandler)
     else:
-        def restore(): return None
+        def restore():
+            return
 
     try:
         yield

@@ -5,7 +5,6 @@ import fcntl
 import termios
 import pty
 import signal
-import select
 import struct
 import traceback
 import eventlet
@@ -51,7 +50,7 @@ def child(cmdline, cwd, winsize, env):
         else:
             argv = cmdline.split('\0')
             os.execvpe(argv[0], argv, envdict)
-    except:
+    except BaseException:
         traceback.print_exc()
     finally:
         sys.exit(0)
@@ -60,7 +59,7 @@ def child(cmdline, cwd, winsize, env):
 def try_read(fd, size):
     try:
         return os.read(fd, size)
-    except:
+    except Exception:
         return ''
 
 
@@ -85,7 +84,7 @@ def sock_read_loop(sock, master, pid):
                 os.kill(pid, signal.SIGWINCH)
     except Exception as e:
         if isinstance(e, PartialRead):
-            print 'FIN received'
+            print('FIN received')
         else:
             traceback.print_exc()
 
@@ -93,7 +92,7 @@ def sock_read_loop(sock, master, pid):
 def request_handler(conn, server):
     try:
         child_args = [read_command(conn) for _ in range(4)]
-        print("Running command: " + child_args[0])
+        print(("Running command: " + child_args[0]))
         if child_args[0] == "su_exit":
             sys.exit()
 
@@ -111,7 +110,7 @@ def request_handler(conn, server):
     except Exception as ex:
         traceback.print_exc()
     finally:
-        print 'Closing connection'
+        print('Closing connection')
         conn.close()
 
 
@@ -131,7 +130,7 @@ def main():
     server = eventlet.listen(('127.0.0.1', PORT))
     signal.signal(signal.SIGCHLD, handle_sigchild)
     conn, acc = server.accept()
-    print 'Accepted connection from %r' % (acc,)
+    print('Accepted connection from %r' % (acc,))
     request_handler(conn, server)
 
 
