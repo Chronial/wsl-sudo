@@ -20,10 +20,45 @@ import termios
 
 CMD_DATA = 1
 CMD_WINSZ = 2
+CMD_RETURN = 3
 
 
 class PartialRead(Exception):
     pass
+
+
+class MessageChannel:
+    def __init__(self, sock):
+        self.sock = sock
+
+    def recv_n(self, n):
+        d = []
+        while n > 0:
+            s = self.sock.recv(n)
+            if not s:
+                break
+            d.append(s)
+            n -= len(s)
+        if n > 0:
+            raise PartialRead('EOF while reading')
+        return b''.join(d)
+
+    def recv_message(self):
+        length = struct.unpack('I', self.recv_n(4))[0]
+        return self.recv_n(length)
+
+    def recv_command(self):
+        """Returns a tuple (cmd_type, data)"""
+        message = self.recv_message()
+        return struct.unpack('I', message[:4])[0], message[4:]
+
+    def send_message(self, data):
+        length = len(data)
+        self.sock.send(struct.pack('I', length))
+        self.sock.send(data)
+
+    def send_command(self, cmd, data):
+        self.send_message(struct.pack('I', cmd) + data)
 
 
 class ElevatedServer:
@@ -36,12 +71,13 @@ class ElevatedServer:
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         with closing(self.sock):
             self.sock.connect(('127.0.0.1', port))
-            received_password = self.recv_message()
+            self.channel = MessageChannel(self.sock)
+            received_password = self.channel.recv_message()
             if received_password != password:
                 print("ERROR: invalid password")
                 sys.exit(1)
 
-            child_args = [self.recv_message() for _ in range(4)]
+            child_args = [self.channel.recv_message() for _ in range(4)]
             print("Elevated sudo server running:")
             print("> " + child_args[0].decode())
 
@@ -75,22 +111,6 @@ class ElevatedServer:
         finally:
             os._exit(1)
 
-    def recv_n(self, n):
-        d = []
-        while n > 0:
-            s = self.sock.recv(n)
-            if not s:
-                break
-            d.append(s)
-            n -= len(s)
-        if n > 0:
-            raise PartialRead('EOF while reading')
-        return b''.join(d)
-
-    def recv_message(self):
-        length = struct.unpack('I', self.recv_n(4))[0]
-        return self.recv_n(length)
-
     def try_read(self, fd, size):
         try:
             return os.read(fd, size)
@@ -100,7 +120,16 @@ class ElevatedServer:
     def pty_read_loop(self):
         try:
             for chunk in iter(lambda: self.try_read(self.child_pty, 8192), b''):
-                self.sock.sendall(chunk)
+                self.channel.send_command(CMD_DATA, chunk)
+            print('pty closed, getting return value')
+            (success, exit_status) = os.waitpid(self.child_pid, os.WNOHANG)
+            if not success or not os.WIFEXITED(exit_status):
+                return_code = 1
+                print('process did not shut down normally, no return value')
+            else:
+                return_code = os.WEXITSTATUS(exit_status)
+                print('process finished with return value ', return_code)
+            self.channel.send_command(CMD_RETURN, struct.pack('i', return_code))
             self.sock.shutdown(socket.SHUT_WR)
         except Exception as e:
             traceback.print_exc()
@@ -108,8 +137,7 @@ class ElevatedServer:
     def sock_read_loop(self):
         try:
             while True:
-                message = self.recv_message()
-                id, data = struct.unpack('I', message[:4])[0], message[4:]
+                id, data = self.channel.recv_command()
                 if id == CMD_DATA:
                     os.write(self.child_pty, data)
                 elif id == CMD_WINSZ:
@@ -144,36 +172,42 @@ class UnprivilegedClient:
 
                 listen_socket.settimeout(5)
                 self.sock, acc = listen_socket.accept()
+                self.channel = MessageChannel(self.sock)
 
             command_bytes = list(map(os.fsencode, command))
             self.run(password, command_bytes)
 
     def run(self, password, command):
         with closing(self.sock):
-            self.send_message(password)
-            self.send_message(b'\0'.join(command))
-            self.send_message(os.fsencode(os.getcwd()))
-            self.send_message(self.get_winsize())
-            self.send_message(b'\0'.join(b'%s=%s' % t for t in os.environb.items()))
+            self.channel.send_message(password)
+            self.channel.send_message(b'\0'.join(command))
+            self.channel.send_message(os.fsencode(os.getcwd()))
+            self.channel.send_message(self.get_winsize())
+            self.channel.send_message(b'\0'.join(b'%s=%s' % t for t in os.environb.items()))
 
             def handle_sigwinch(n, f):
-                self.send_command(CMD_WINSZ, self.get_winsize())
+                self.channel.send_command(CMD_WINSZ, self.get_winsize())
 
             signal.signal(signal.SIGWINCH, handle_sigwinch)
 
             with self.raw_term_mode():
                 fdset = [0, self.sock.fileno()]
-                done = False
-                while not done:
+                while True:
                     for fd in self.xselect(fdset, (), ())[0]:
                         if fd == 0:
-                            self.send_command(CMD_DATA, os.read(0, 8192))
+                            self.channel.send_command(CMD_DATA, os.read(0, 8192))
                         else:
-                            data = self.sock.recv(8192)
-                            if data:
+                            try:
+                                cmd, data = self.channel.recv_command()
+                            except PartialRead:
+                                print("sudo: Lost connection to elevated process")
+                                sys.exit(1)
+                            if cmd == CMD_DATA:
                                 os.write(1, data)
+                            elif cmd == CMD_RETURN:
+                                sys.exit(struct.unpack('i', data)[0])
                             else:
-                                done = True
+                                raise ValueError("Unexpected message")
 
             self.sock.shutdown(socket.SHUT_WR)
 
@@ -210,14 +244,6 @@ class UnprivilegedClient:
 
         winsz = struct.pack('HHHH', 0, 0, 0, 0)
         return fcntl.ioctl(0, termios.TIOCGWINSZ, winsz)
-
-    def send_message(self, data):
-        length = len(data)
-        self.sock.send(struct.pack('I', length))
-        self.sock.send(data)
-
-    def send_command(self, cmd, data):
-        self.send_message(struct.pack('I', cmd) + data)
 
 
 def main():
