@@ -21,7 +21,7 @@ class PartialRead(Exception):
     pass
 
 
-def readn(sock, n):
+def recv_n(sock, n):
     d = []
     while n > 0:
         s = sock.recv(n)
@@ -34,9 +34,9 @@ def readn(sock, n):
     return b''.join(d)
 
 
-def read_command(sock):
-    length = struct.unpack('I', readn(sock, 4))[0]
-    return readn(sock, length)
+def read_message(sock):
+    length = struct.unpack('I', recv_n(sock, 4))[0]
+    return recv_n(sock, length)
 
 
 def child(cmdline, cwd, winsize, env):
@@ -70,23 +70,28 @@ def pty_read_loop(child_pty, sock):
 def sock_read_loop(sock, child_pty, pid):
     try:
         while True:
-            command = read_command(sock)
+            command = read_message(sock)
             id, data = struct.unpack('I', command[:4])[0], command[4:]
             if id == CMD_DATA:
                 os.write(child_pty, data)
             elif id == CMD_WINSZ:
                 fcntl.ioctl(child_pty, termios.TIOCSWINSZ, data)
                 os.kill(pid, signal.SIGWINCH)
-    except Exception as e:
-        if isinstance(e, PartialRead):
-            print('FIN received')
-        else:
-            traceback.print_exc()
+    except PartialRead:
+        print('FIN received')
+    except Exception:
+        traceback.print_exc()
 
 
-def request_handler(conn):
+def main():
+    serversocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    serversocket.bind(('127.0.0.1', PORT))
+    with closing(serversocket):
+        serversocket.listen()
+        conn, acc = serversocket.accept()
+        print('Accepted connection from %r' % (acc,))
     with closing(conn):
-        child_args = [read_command(conn) for _ in range(4)]
+        child_args = [read_message(conn) for _ in range(4)]
         print("Running command: " + child_args[0].decode())
         if child_args[0] == "su_exit":
             sys.exit()
@@ -104,17 +109,6 @@ def request_handler(conn):
             with ThreadPoolExecutor(max_workers=2) as executor:
                 executor.submit(pty_read_loop, child_pty, conn)
                 executor.submit(sock_read_loop, conn, child_pty, child_pid)
-
-
-def main():
-    serversocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    serversocket.bind(('127.0.0.1', PORT))
-    with closing(serversocket):
-        serversocket.listen()
-        conn, acc = serversocket.accept()
-        print('Accepted connection from %r' % (acc,))
-    with closing(conn):
-        request_handler(conn)
 
 
 def cygwin_hide_console_window():
