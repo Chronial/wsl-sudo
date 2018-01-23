@@ -7,8 +7,8 @@ import signal
 import socket
 import struct
 import sys
-import threading
 import traceback
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
 
 import termios
@@ -103,15 +103,9 @@ def request_handler(conn):
             finally:
                 sys.exit(0)
         else:
-            #with os.fdopen(child_pty, 'rb+') as masterfile:
-            child_reader = threading.Thread(target=pty_read_loop,
-                                            args=(child_pty, conn))
-            child_writer = threading.Thread(target=sock_read_loop,
-                                            args=(conn, child_pty, child_pid))
-            child_reader.start()
-            child_writer.start()
-            child_reader.join()
-            child_writer.join()
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                executor.submit(pty_read_loop, child_pty, conn)
+                executor.submit(sock_read_loop, conn, child_pty, child_pid)
 
 
 def handle_sigchild(n, f):
