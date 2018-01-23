@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import argparse
 import errno
 import fcntl
 import os
@@ -65,10 +66,10 @@ def send_command(fd, cmd, data):
     send_message(fd, struct.pack('I', cmd) + data)
 
 
-def client_main(sock, password, args):
+def client_main(sock, password, command):
     with closing(sock):
         send_message(sock, password)
-        send_message(sock, b'\0'.join(args))
+        send_message(sock, b'\0'.join(command))
         send_message(sock, os.fsencode(os.getcwd()))
         send_message(sock, get_winsize())
         send_message(sock, b'\0'.join(b'%s=%s' % t for t in os.environb.items()))
@@ -96,6 +97,19 @@ def client_main(sock, password, args):
 
 
 def main():
+    parser = argparse.ArgumentParser(description="Run a command in elevated user mode")
+    window_group = parser.add_mutually_exclusive_group()
+    window_group.set_defaults(window='--hide')
+    window_group.add_argument('--visible', action='store_const', dest='window',
+                              const='--shownormal',
+                              help="show the elevated console window")
+    window_group.add_argument('--minimized', action='store_const', dest='window',
+                              const='--showminnoactive',
+                              help="show the elevated console window as a minimized window")
+    parser.add_argument('--elevated', action='store_true', help=argparse.SUPPRESS)
+    parser.add_argument('command', nargs=argparse.PARSER)
+    args = parser.parse_args()
+
     password = os.urandom(32)
     sudoserver = os.path.dirname(os.path.abspath(__file__)) + '/sudoserver.py'
     with tempfile.NamedTemporaryFile("wb") as pwf:
@@ -107,13 +121,13 @@ def main():
             port = listen_socket.getsockname()[1]
             listen_socket.listen(1)
 
-            subprocess.run(["cygstart", "--action=runas", "--minimize",
+            subprocess.run(["cygstart", "--action=runas", args.window,
                             sys.executable, sudoserver, str(port), pwf.name])
 
             connection, acc = listen_socket.accept()
 
-        argvb = list(map(os.fsencode, sys.argv))
-        client_main(connection, password, argvb[1:])
+        command_bytes = list(map(os.fsencode, args.command))
+        client_main(connection, password, command_bytes)
 
 
 if __name__ == '__main__':
