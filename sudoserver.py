@@ -1,15 +1,17 @@
-#!/usr/bin/env python
-import sys
-import os
+#!/usr/bin/env python3
+import errno
 import fcntl
-import termios
+import os
 import pty
 import signal
-import struct
-import traceback
-import eventlet
 import socket
-import errno
+import struct
+import sys
+import threading
+import traceback
+from contextlib import closing
+
+import termios
 
 PORT = 7070
 CMD_DATA = 1
@@ -30,7 +32,7 @@ def readn(sock, n):
         n -= len(s)
     if n > 0:
         raise PartialRead('EOF while reading')
-    return ''.join(d)
+    return b''.join(d)
 
 
 def read_command(sock):
@@ -39,48 +41,43 @@ def read_command(sock):
 
 
 def child(cmdline, cwd, winsize, env):
-    try:
-        os.chdir(cwd)
-        fcntl.ioctl(0, termios.TIOCSWINSZ, winsize)
-        envdict = dict(line.split('=', 1) for line in env.split('\0'))
-        envdict['ELEVATED_SHELL'] = '1'
-        if not cmdline:
-            shell = envdict.get('SHELL', '/bin/bash')
-            os.execvpe(shell, (shell, '-i'), envdict)
-        else:
-            argv = cmdline.split('\0')
-            os.execvpe(argv[0], argv, envdict)
-    except BaseException:
-        traceback.print_exc()
-    finally:
-        sys.exit(0)
+    os.chdir(cwd)
+    fcntl.ioctl(0, termios.TIOCSWINSZ, winsize)
+    envdict = dict(line.split(b'=', 1) for line in env.split(b'\0'))
+    envdict[b'ELEVATED_SHELL'] = b'1'
+    if not cmdline:
+        shell = envdict.get(b'SHELL', b'/bin/bash')
+        os.execvpe(shell, (shell, '-i'), envdict)
+    else:
+        argv = cmdline.split(b'\0')
+        os.execvpe(argv[0], argv, envdict)
 
 
 def try_read(fd, size):
     try:
         return os.read(fd, size)
     except Exception:
-        return ''
+        return b''
 
 
-def pty_read_loop(master, sock):
+def pty_read_loop(child_pty, sock):
     try:
-        for chunk in iter(lambda: try_read(master, 8192), ''):
+        for chunk in iter(lambda: try_read(child_pty, 8192), b''):
             sock.sendall(chunk)
         sock.shutdown(socket.SHUT_WR)
     except Exception as e:
         traceback.print_exc()
 
 
-def sock_read_loop(sock, master, pid):
+def sock_read_loop(sock, child_pty, pid):
     try:
         while True:
             command = read_command(sock)
             id, data = struct.unpack('I', command[:4])[0], command[4:]
             if id == CMD_DATA:
-                os.write(master, data)
+                os.write(child_pty, data)
             elif id == CMD_WINSZ:
-                fcntl.ioctl(master, termios.TIOCSWINSZ, data)
+                fcntl.ioctl(child_pty, termios.TIOCSWINSZ, data)
                 os.kill(pid, signal.SIGWINCH)
     except Exception as e:
         if isinstance(e, PartialRead):
@@ -89,29 +86,32 @@ def sock_read_loop(sock, master, pid):
             traceback.print_exc()
 
 
-def request_handler(conn, server):
-    try:
+def request_handler(conn):
+    with closing(conn):
         child_args = [read_command(conn) for _ in range(4)]
-        print(("Running command: " + child_args[0]))
+        print("Running command: " + child_args[0].decode())
         if child_args[0] == "su_exit":
             sys.exit()
 
-        pid, master = pty.fork()
-        if pid == 0:
+        child_pid, child_pty = pty.fork()
+        if child_pid == 0:
             conn.close()
-            server.close()
-            child(*child_args)
-
-        with os.fdopen(master, 'r+') as masterfile:
-            pool = eventlet.GreenPool()
-            pool.spawn_n(pty_read_loop, master, conn)
-            pool.spawn_n(sock_read_loop, conn, master, pid)
-            pool.waitall()
-    except Exception as ex:
-        traceback.print_exc()
-    finally:
-        print('Closing connection')
-        conn.close()
+            try:
+                child(*child_args)
+            except BaseException:
+                traceback.print_exc()
+            finally:
+                sys.exit(0)
+        else:
+            #with os.fdopen(child_pty, 'rb+') as masterfile:
+            child_reader = threading.Thread(target=pty_read_loop,
+                                            args=(child_pty, conn))
+            child_writer = threading.Thread(target=sock_read_loop,
+                                            args=(conn, child_pty, child_pid))
+            child_reader.start()
+            child_writer.start()
+            child_reader.join()
+            child_writer.join()
 
 
 def handle_sigchild(n, f):
@@ -126,12 +126,15 @@ def handle_sigchild(n, f):
 
 
 def main():
-    eventlet.patcher.monkey_patch(all=True)
-    server = eventlet.listen(('127.0.0.1', PORT))
+    serversocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    serversocket.bind(('127.0.0.1', PORT))
     signal.signal(signal.SIGCHLD, handle_sigchild)
-    conn, acc = server.accept()
-    print('Accepted connection from %r' % (acc,))
-    request_handler(conn, server)
+    with closing(serversocket):
+        serversocket.listen()
+        conn, acc = serversocket.accept()
+        print('Accepted connection from %r' % (acc,))
+    with closing(conn):
+        request_handler(conn)
 
 
 def cygwin_hide_console_window():

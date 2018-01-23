@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 import sys
 import os
 import fcntl
@@ -72,10 +72,10 @@ def send_command2(fd, cmd, data):
 def main(args):
     with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as sock:
         sock.connect(('127.0.0.1', PORT))
-        send_command(sock, '\0'.join(args))
-        send_command(sock, os.getcwd())
+        send_command(sock, b'\0'.join(args))
+        send_command(sock, os.fsencode(os.getcwd()))
         send_command(sock, get_winsize())
-        send_command(sock, '\0'.join('%s=%s' % t for t in os.environ.items()))
+        send_command(sock, b'\0'.join(b'%s=%s' % t for t in os.environb.items()))
 
         def handle_sigwinch(n, f):
             send_command2(sock, CMD_WINSZ, get_winsize())
@@ -97,4 +97,5 @@ def main(args):
 
 
 if __name__ == '__main__':
-    main(sys.argv[1:])
+    argvb = list(map(os.fsencode, sys.argv))
+    main(argvb[1:])
