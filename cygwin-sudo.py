@@ -170,52 +170,34 @@ class ElevatedServer:
     def pty_fork(self, pty_flags):
         """Fork a child process, connecting to a new pty
 
-        Args: tty_flags is a list of 3 booleans, specifying if the corresponding
+        Args: pty_flags is a list of 3 booleans, specifying if the corresponding
               fd of the child should be connected to the pty
-        Returns: a tuple (pid, fds): the fork-result pid and a list of our end
-                 of the 3 standard streams"""
+        Returns: a tuple (pid, fds): the fork-result pid and a list of the child's
+                 3 standard streams. The child gets (0, None)"""
+
+        pipes = [os.pipe() if not is_pty else None
+                 for is_pty in pty_flags]
+        if not pty_flags[0]:
+            # STDIN goes the other direction
+            pipes[0] = tuple(reversed(pipes[0]))
+
         has_pty = any(pty_flags)
         if has_pty:
-            master_pty, slave_pty = pty.openpty()
-
-        fds = []
-        for i, is_pty in enumerate(pty_flags):
-            if is_pty:
-                fds.append((master_pty, slave_pty))
-            else:
-                master_pipe, slave_pipe = os.pipe()
-                if i == 0:  # STDIN
-                    master_pipe, slave_pipe = slave_pipe, master_pipe
-                os.set_inheritable(slave_pipe, True)
-                fds.append((master_pipe, slave_pipe))
-
-        pid = os.fork()
-        if pid == 0:
-            if has_pty:
-                # Establish a new session.
-                os.setsid()
-                os.close(master_pty)
-
-            for i, (master, slave) in enumerate(fds):
-                os.dup2(slave, i)
-
-            for fd in {s for m, s in fds}:
-                if fd > 3:
-                    os.close(fd)
-
-            if has_pty:
-                for i, ((master, slave), is_pty) in enumerate(zip(fds, pty_flags)):
-                    if is_pty:
-                        # Explicitly open the tty to make it become a controlling tty.
-                        tmp_fd = os.open(os.ttyname(i), os.O_RDWR)
-                        os.close(tmp_fd)
-                        break
-
-            return pid, [s for m, s in fds]
+            pid, child_pty = pty.fork()
         else:
-            for fd in {s for m, s in fds}:
-                os.close(fd)
-            return pid, [m for m, s in fds]
+            pid = os.fork()
+
+        if pid == 0:
+            for i, pipe in enumerate(pipes):
+                if pipe:
+                    os.dup2(pipe[1], i)
+
+            return pid, None
+        else:
+            for pipe in pipes:
+                if pipe:
+                    os.close(pipe[1])
+            return pid, [pipe[0] if pipe else child_pty for pipe in pipes]
 
 
 class UnprivilegedClient:
