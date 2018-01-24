@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 import argparse
-import concurrent.futures
 import fcntl
 import os
 import pty
@@ -104,26 +103,6 @@ class ElevatedServer:
                 time.sleep(10)
                 sys.exit(1)
 
-    def main_process(self):
-        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-            sf = executor.submit(self.sock_read_loop)
-            cf = executor.submit(self.child_read_loop)
-
-            concurrent.futures.wait([sf, cf], return_when=concurrent.futures.FIRST_COMPLETED)
-            for fd in set(self.child_fds):
-                os.close(fd)
-
-            print('pty closed, getting return value')
-            (success, exit_status) = os.waitpid(self.child_pid, 0)
-            if not success or not os.WIFEXITED(exit_status):
-                return_code = 1
-                print('process did not shut down normally, no return value')
-            else:
-                return_code = os.WEXITSTATUS(exit_status)
-                print('process finished with return value ', return_code)
-            self.channel.send_command(CMD_RETURN, struct.pack('i', return_code))
-            self.sock.shutdown(socket.SHUT_WR)
-
     def child_process(self, argv, cwd, winsize, envdict):
         try:
             os.chdir(cwd)
@@ -139,39 +118,49 @@ class ElevatedServer:
         finally:
             os._exit(1)
 
-    def child_read_loop(self):
+    def main_process(self):
+        self.transfer_loop()
+        for fd in set(self.child_fds):
+            os.close(fd)
+
+        print('pty closed, getting return value')
+        (success, exit_status) = os.waitpid(self.child_pid, 0)
+        if not success or not os.WIFEXITED(exit_status):
+            return_code = 1
+            print('process did not shut down normally, no return value')
+        else:
+            return_code = os.WEXITSTATUS(exit_status)
+            print('process finished with return value ', return_code)
+        self.channel.send_command(CMD_RETURN, struct.pack('i', return_code))
+        self.sock.shutdown(socket.SHUT_WR)
+
+    def transfer_loop(self):
         try:
             while True:
-                for fd in select.select(self.child_fds[1:3], (), ())[0]:
-                    chunk = os.read(fd, 8192)
-                    if not chunk:
-                        return
-                    command = CMD_STDOUT if fd == self.child_fds[1] else CMD_STDERR
-                    self.channel.send_command(command, chunk)
+                sock_fd = self.sock.fileno()
+                fdset = {*self.child_fds[1:3], sock_fd}
+                for fd in select.select(fdset, (), ())[0]:
+                    if fd == sock_fd:
+                        cmd, data = self.channel.recv_command()
+                        if cmd == CMD_STDIN:
+                            os.write(self.child_fds[0], data)
+                        elif cmd == CMD_WINSZ:
+                            fcntl.ioctl(self.child_fds[1], termios.TIOCSWINSZ, data)
+                            os.kill(self.child_pid, signal.SIGWINCH)
+                        else:
+                            raise ValueError("Unexpected command:", cmd)
+                    else:
+                        chunk = os.read(fd, 8192)
+                        if not chunk:
+                            return
+                        command = CMD_STDOUT if fd == self.child_fds[1] else CMD_STDERR
+                        self.channel.send_command(command, chunk)
         except OSError:
             return
-        except Exception as e:
-            traceback.print_exc()
-        finally:
-            print('Child read loop terminated')
-
-    def sock_read_loop(self):
-        try:
-            while True:
-                cmd, data = self.channel.recv_command()
-                if cmd == CMD_STDIN:
-                    os.write(self.child_fds[0], data)
-                elif cmd == CMD_WINSZ:
-                    fcntl.ioctl(self.child_fds[1], termios.TIOCSWINSZ, data)
-                    os.kill(self.child_pid, signal.SIGWINCH)
-                else:
-                    raise ValueError("Unexpected command:", cmd)
         except PartialRead:
             pass
-        except Exception:
-            traceback.print_exc()
         finally:
-            print('Socket read loop terminated')
+            print('Transfer loop terminated')
 
     def pty_fork(self, pty_flags):
         """Fork a child process, connecting to a new pty
