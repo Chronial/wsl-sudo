@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 import argparse
-import errno
+import concurrent.futures
 import fcntl
 import os
 import pty
@@ -11,9 +11,9 @@ import struct
 import subprocess
 import sys
 import tempfile
+import time
 import traceback
 import tty
-import concurrent.futures
 from contextlib import ExitStack, closing, contextmanager
 
 import termios
@@ -65,38 +65,44 @@ class MessageChannel:
 
 class ElevatedServer:
     def main(self, argv):
-        port = int(argv[1])
-        password_file = argv[2]
-        with open(password_file, 'rb') as f:
-            password = f.read()
+        try:
+            port = int(argv[1])
+            password_file = argv[2]
+            with open(password_file, 'rb') as f:
+                password = f.read()
 
-        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        with closing(self.sock):
-            self.sock.connect(('127.0.0.1', port))
-            self.channel = MessageChannel(self.sock)
-            received_password = self.channel.recv_message()
-            if received_password != password:
-                print("ERROR: invalid password")
+            self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            with closing(self.sock):
+                self.sock.connect(('127.0.0.1', port))
+                self.channel = MessageChannel(self.sock)
+                received_password = self.channel.recv_message()
+                if received_password != password:
+                    print("ERROR: invalid password")
+                    sys.exit(1)
+
+                child_argv = self.channel.recv_message().split(b'\0')
+                child_cwd = self.channel.recv_message()
+                child_winsize = self.channel.recv_message()
+                child_pty_flags = struct.unpack('bbb', self.channel.recv_message())
+                env_packed = self.channel.recv_message()
+                child_envdict = dict(x.split(b'=', 1) for x in env_packed.split(b'\0'))
+
+                print("Elevated sudo server running:")
+                print("> " + b" ".join(child_argv).decode())
+
+                child_pid, child_fds = self.pty_fork(child_pty_flags)
+                if child_pid == 0:
+                    self.child_process(child_argv, child_cwd, child_winsize, child_envdict)
+                else:
+                    self.child_pid = child_pid
+                    self.child_fds = child_fds
+                    self.main_process()
+        except Exception as e:
+            if argv[0] == "visible":
+                print("\nSudo server crashed:")
+                traceback.print_exc()
+                time.sleep(10)
                 sys.exit(1)
-
-            child_argv = self.channel.recv_message().split(b'\0')
-            child_cwd = self.channel.recv_message()
-            child_winsize = self.channel.recv_message()
-            child_pty_flags = struct.unpack('bbb', self.channel.recv_message())
-            env_packed = self.channel.recv_message()
-            child_envdict = dict(x.split(b'=', 1) for x in env_packed.split(b'\0'))
-
-            print("Elevated sudo server running:")
-            print("> " + b" ".join(child_argv).decode())
-
-            child_pid, child_fds = self.pty_fork(child_pty_flags)
-            if child_pid == 0:
-                self.child_fds = child_fds
-                self.child_process(child_argv, child_cwd, child_winsize, child_envdict)
-            else:
-                self.child_pid = child_pid
-                self.child_fds = child_fds
-                self.main_process()
 
     def main_process(self):
         with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
@@ -201,22 +207,26 @@ class ElevatedServer:
 
 
 class UnprivilegedClient:
-    def main(self, command, window, **kwargs):
+    def main(self, command, visibility, **kwargs):
         password = os.urandom(32)
         with tempfile.NamedTemporaryFile("wb") as pwf:
             pwf.write(password)
             pwf.flush()
+
             listen_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             listen_socket.bind(('127.0.0.1', 0))
             with closing(listen_socket):
                 port = listen_socket.getsockname()[1]
                 listen_socket.listen(1)
 
+                visibility_flag = ['--hide', '--showminnoactive', '--shownormal'][visibility]
+
                 try:
                     subprocess.check_call([
-                        "cygstart", "--action=runas", window,
+                        "cygstart", "--action=runas", visibility_flag,
                         sys.executable, __file__,
-                        '--elevated', 'server', str(port), pwf.name])
+                        '--elevated', 'visible' if visibility else 'hidden',
+                        str(port), pwf.name])
                 except subprocess.CalledProcessError as e:
                     print("sudo: failed to start elevated process")
                     return
@@ -305,13 +315,11 @@ class UnprivilegedClient:
 def main():
     parser = argparse.ArgumentParser(description="Run a command in elevated user mode")
     window_group = parser.add_mutually_exclusive_group()
-    window_group.set_defaults(window='--hide')
-    window_group.add_argument('--visible', action='store_const', dest='window',
-                              const='--shownormal',
-                              help="show the elevated console window")
-    window_group.add_argument('--minimized', action='store_const', dest='window',
-                              const='--showminnoactive',
+    window_group.set_defaults(visibility=0)
+    window_group.add_argument('--minimized', action='store_const', dest='visibility', const=1,
                               help="show the elevated console window as a minimized window")
+    window_group.add_argument('--visible', action='store_const', dest='visibility', const=2,
+                              help="show the elevated console window")
     parser.add_argument('--elevated', action='store_true', help=argparse.SUPPRESS)
     parser.add_argument('command', nargs=argparse.PARSER)
     args = parser.parse_args()
