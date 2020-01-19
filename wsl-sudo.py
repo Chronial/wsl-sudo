@@ -2,6 +2,7 @@
 import argparse
 import fcntl
 import os
+import pickle
 import pty
 import select
 import signal
@@ -48,6 +49,9 @@ class MessageChannel:
         length = struct.unpack('I', self.recv_n(4))[0]
         return self.recv_n(length)
 
+    def recv_object(self):
+        return pickle.loads(self.recv_message())
+
     def recv_command(self):
         """Returns a tuple (cmd_type, data)"""
         message = self.recv_message()
@@ -57,6 +61,9 @@ class MessageChannel:
         length = len(data)
         self.sock.send(struct.pack('I', length))
         self.sock.send(data)
+
+    def send_object(self, obj):
+        self.send_message(pickle.dumps(obj))
 
     def send_command(self, cmd, data):
         self.send_message(struct.pack('I', cmd) + data)
@@ -79,19 +86,18 @@ class ElevatedServer:
                     print("ERROR: invalid password")
                     sys.exit(1)
 
-                child_argv = self.channel.recv_message().split(b'\0')
-                child_cwd = self.channel.recv_message()
+                child_argv = self.channel.recv_object()
+                child_cwd = self.channel.recv_object()
                 child_winsize = self.channel.recv_message()
-                child_pty_flags = struct.unpack('bbb', self.channel.recv_message())
-                env_packed = self.channel.recv_message()
-                child_envdict = dict(x.split(b'=', 1) for x in env_packed.split(b'\0'))
+                child_pty_flags = self.channel.recv_object()
+                child_env = self.channel.recv_object()
 
                 print("Elevated sudo server running:")
                 print("> " + b" ".join(child_argv).decode())
 
                 child_pid, child_fds = self.pty_fork(child_pty_flags)
                 if child_pid == 0:
-                    self.child_process(child_argv, child_cwd, child_winsize, child_envdict)
+                    self.child_process(child_argv, child_cwd, child_winsize, child_env)
                 else:
                     self.child_pid = child_pid
                     self.child_fds = child_fds
@@ -233,11 +239,11 @@ class UnprivilegedClient:
     def run(self, password, command):
         with closing(self.sock):
             self.channel.send_message(password)
-            self.channel.send_message(b'\0'.join(command))
-            self.channel.send_message(os.fsencode(os.getcwd()))
+            self.channel.send_object(command)
+            self.channel.send_object(os.getcwd())
             self.channel.send_message(self.get_winsize())
-            self.channel.send_message(struct.pack('bbb', os.isatty(0), os.isatty(1), os.isatty(2)))
-            self.channel.send_message(b'\0'.join(b'%s=%s' % t for t in os.environb.items()))
+            self.channel.send_object((os.isatty(0), os.isatty(1), os.isatty(2)))
+            self.channel.send_object(os.environb.copy())
 
             def handle_sigwinch(n, f):
                 # TODO: fix race condition with normal send
