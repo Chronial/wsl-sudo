@@ -112,7 +112,7 @@ class ElevatedServer:
             try:
                 os.execvpe(argv[0], argv, envdict)
             except FileNotFoundError:
-                print("sudo: Unknown command '{}'".format(os.fsdecode(argv[0])))
+                print("wsl-sudo: {}: command not found".format(os.fsdecode(argv[0])))
         except BaseException:
             traceback.print_exc()
         finally:
@@ -208,16 +208,19 @@ class UnprivilegedClient:
                 port = listen_socket.getsockname()[1]
                 listen_socket.listen(1)
 
-                visibility_flag = ['--hide', '--showminnoactive', '--shownormal'][visibility]
+                window_style = ['Hidden', 'Minimized', 'Normal'][visibility]
 
                 try:
-                    subprocess.check_call([
-                        "cygstart", "--action=runas", visibility_flag,
-                        sys.executable, __file__,
-                        '--elevated', 'visible' if visibility else 'hidden',
-                        str(port), pwf.name])
+                    subprocess.check_call(
+                        ["powershell.exe", "Start-Process", "-Verb", "runas",
+                         "-WindowStyle", window_style,
+                         "-FilePath", "wsl", "-ArgumentList",
+                         '"{}"'.format(subprocess.list2cmdline([
+                             sys.executable, os.path.abspath(__file__),
+                             '--elevated', 'visible' if visibility else 'hidden',
+                             str(port), pwf.name]))])
                 except subprocess.CalledProcessError as e:
-                    print("sudo: failed to start elevated process")
+                    print("wudo: failed to start elevated process")
                     return
 
                 listen_socket.settimeout(5)
@@ -262,7 +265,7 @@ class UnprivilegedClient:
         try:
             cmd, data = self.channel.recv_command()
         except PartialRead:
-            print("sudo: Lost connection to elevated process")
+            print("wsl-sudo: Lost connection to elevated process")
             sys.exit(1)
 
         if cmd == CMD_STDOUT:

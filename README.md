@@ -1,11 +1,11 @@
-Sudo for Cygwin
+Sudo for WSL
 ===============
 
 What is this?
 -------------
 
-This tool emulates Unix sudo in cygwin. It allows you to run applications in
-elevated user mode from a non-elevated cygwin shell.
+This tool allows you to run applications in windows elevated user mode from a
+non-elevated wsl shell.
 
 It is based on [nu774's tool](https://github.com/nu774/sudo-for-cygwin) and has
 full terminal support, so you can run interactive applications like vim or a
@@ -15,31 +15,30 @@ shell through it.
 Requirements
 ------------
 
-`cygwin-sudo` requires Python >= 3.5. You can get it by installing `python3`
+`wsl-sudo` requires Python >= 3.5. You can get it by installing `python3`
 with the cygwin installer.
 
 
 How to setup
 ------------
 
-Clone this repository or just download `cygwin-sudo.py`.
+Clone this repository or just download `wsl-sudo.py`.
 
-You can test if the script works by running `python3 cygwin-sudo.py id -nG` and
-comparing the output with just running `id -nG`. Running the command through
-cygwin-sudo should add an Administrator group to the outputed list.
+You can test if the script works by running `python3 wsl-sudo.py net.exe sessions`
+and comparing the output with just running `net.exe sessions`.
 
 For convenience, you might want to add an alias to this script, eg:
 
-    alias sudo="python3 /path-to-cygwin-sudo/cygwin-sudo.py"
+    alias wudo="python3 /path-to-wsl-sudo/wsl-sudo.py"
 
 
 Usage examples:
 
-    $ sudo vim /etc/hosts
-    $ sudo cp foo.txt /cygdrive/c/Program Files/
-    $ sudo cygstart cmd  # open elevated standard command prompt
-    $ sudo cygstart regedit
-    $ sudo bash  # open elevated shell
+    $ wudo vim /mnt/c/Windows/System32/Drivers/etc/hosts
+    $ wudo cp foo.txt /mnt/c/Program Files/
+    $ wudo cmd  # open elevated standard command prompt
+    $ wudo bash  # open elevated shell
+    $ wudo regedit
 
 Note that it will open an UAC prompt every time it is run, so if you want to
 run multiple commands in succession, you should open an elevated shell (see
@@ -49,10 +48,10 @@ example above) and run your commands from there
 How it works
 ------------
 
-When run, `cygwin-sudo` uses `cygstart` to run second process in elevated mode.
-This elevated process will then run the given command and connect to the
+When run, `wsl-sudo` uses `powershell` to run a second process in elevated
+mode. This elevated process will then run the given command and connect to the
 initial process to exchange input and output.
 
 The given command runs in a pty, so it *acts* as if running in an ordinary
-terminals. Therefore you can run cygwin's interactive console-based program
+terminals. Therefore you can run wsl's interactive console-based program
 like vim or less.
