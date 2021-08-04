@@ -115,6 +115,9 @@ class ElevatedServer:
             if os.isatty(0):
                 fcntl.ioctl(0, termios.TIOCSWINSZ, winsize)
             envdict[b'ELEVATED_SHELL'] = b'1'
+            # Undocumented WSL2 env var, required for WSL2 support
+            if b'WSL_INTEROP' in os.environb:
+                envdict[b'WSL_INTEROP'] = os.environb[b'WSL_INTEROP']
             try:
                 os.execvpe(argv[0], argv, envdict)
             except FileNotFoundError:
