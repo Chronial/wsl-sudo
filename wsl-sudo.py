@@ -221,7 +221,8 @@ class UnprivilegedClient:
 
                 try:
                     subprocess.check_call(
-                        ["powershell.exe", "Start-Process", "-Verb", "runas",
+                        ["/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe",
+                         "Start-Process", "-Verb", "runas",
                          "-WindowStyle", window_style,
                          "-FilePath", "wsl", "-ArgumentList",
                          '"{}"'.format(subprocess.list2cmdline([
