@@ -233,7 +233,7 @@ class UnprivilegedClient:
                     print("wudo: failed to start elevated process")
                     return
 
-                listen_socket.settimeout(5)
+                listen_socket.settimeout(10)
                 self.sock, acc = listen_socket.accept()
                 self.channel = MessageChannel(self.sock)
 
