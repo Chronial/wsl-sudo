@@ -219,12 +219,16 @@ class UnprivilegedClient:
 
                 window_style = ['Hidden', 'Minimized', 'Normal'][visibility]
 
+                distro = os.environ['WSL_DISTRO_NAME']
+                distro_args = ['-d', distro] if distro else []
+
                 try:
                     subprocess.check_call(
                         ["powershell.exe", "Start-Process", "-Verb", "runas",
                          "-WindowStyle", window_style,
                          "-FilePath", "wsl", "-ArgumentList",
                          '"{}"'.format(subprocess.list2cmdline([
+                             *distro_args,
                              sys.executable, os.path.abspath(__file__),
                              '--elevated', 'visible' if visibility else 'hidden',
                              str(port), pwf.name]))])
